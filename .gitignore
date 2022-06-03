@@ -1,0 +1,4 @@
+.DS_Store
+*.gz
+*.pkl
+__pycache__
