@@ -158,7 +158,7 @@ def _MSE(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
 
     if t1.requires_grad:
         def MSE_fn(grad: np.ndarray):
-            return -2*grad*temp/t1.shape[1]
+            return -grad*temp/t1.shape[1]
 
         depends_on.append(Func(t1, MSE_fn))
     
