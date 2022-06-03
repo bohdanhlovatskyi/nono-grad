@@ -9,20 +9,18 @@ from nonograd.models.mnist_net import MNISTNet
 def validation(model, Xv, Yv):
     iteration = 0
     tr = 0
+
     for x, y in tqdm(zip(Xv, Yv)):
         x, y = Tensor(x.reshape(1, 784)),\
                Tensor(np.eye(10)[y, :].reshape(10, 1))
         out = model.forward(x)
-        # print("prediction: ", out)
-        # print('true result: \n', y)
-        # plt.imshow(x.data.reshape(28, 28))
 
         if np.argmax(out.data) == np.argmax(y.data):
             tr += 1
-        # plt.show()
+
         iteration += 1
 
-    print(f"Accuracy: {tr/iteration}")
+    return tr/iteration
 
 def Mnist(load: bool = False):
     # load dataset
@@ -49,11 +47,9 @@ def Mnist(load: bool = False):
             loss = out.mse(y)
             assert loss.requires_grad
 
-            # if iteration % 100:
-            #     print(loss)
             optim.zero_grad()
             loss.backward()
             optim.step()
 
-        validation(model, Xv, Yv)
-        print(loss)
+        acc = validation(model, Xv, Yv)
+        print(f"[{epoch}] acc: {acc}; loss: {loss}")
