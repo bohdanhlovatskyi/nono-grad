@@ -1,16 +1,16 @@
-import copy 
-import torch
 import numpy as np 
+from abc import ABC, abstractmethod
 
 DISPLAY_GRAPH = False
 
 class Func:
 
     def __init__(self, ctx, op) -> None:
+        # instantiation of a function is a context 
         self.ctx = ctx
         self.backward = op
 
-class Tensor:
+class Tensor(ABC):
 
     def __init__(self, data, requires_grad: bool = False, depends_on = None) -> None:
         self.data = data.astype(np.float64)
@@ -26,15 +26,14 @@ class Tensor:
 
     @property
     def T(self): 
-        return Tensor(self.data.T, self.requires_grad, self.depends_on)
+        return self.__class__(self.data.T, self.requires_grad, self.depends_on)
 
     def zero_grad(self):
-        self.grad = Tensor(np.zeros_like(self.data))
+        self.grad = self.__class__(np.zeros_like(self.data))
 
     def backward(self, grad: 'Tensor' = None):
-
         if grad is None or not grad.data.any():
-            grad = Tensor(np.ones(self.data.shape))
+            grad = self.__class__(np.ones(self.data.shape))
         
         self.grad.data += grad.data
         
@@ -43,15 +42,76 @@ class Tensor:
             # backward_grad.data /= np.linalg.norm(backward_grad.data)
             if DISPLAY_GRAPH:
                 print(dep.backward.__name__)
-            dep.ctx.backward(Tensor(backward_grad))
+            dep.ctx.backward(self.__class__(backward_grad))
 
     def __str__(self) -> str:
         return f'{self.data}'
 
+    @abstractmethod
     def __matmul__(self, other: 'Tensor') -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def dot(self, other: 'Tensor') -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def __add__(self, other: 'Tensor') -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def __sub__(self, other: 'Tensor') -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def __mul__(self, k: float):
+        return NotImplemented
+
+    @abstractmethod
+    def sqrt(self):
+        return NotImplemented
+
+    @abstractmethod
+    def __pow__(self, k: float):
+        return NotImplemented
+
+    @abstractmethod
+    def div(self, other):
+        return NotImplemented
+
+    @abstractmethod
+    def relu(self):
+        return NotImplemented
+
+    @abstractmethod
+    def softmax(self) -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def mse(self, other) -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def sigmoid(self) -> 'Tensor':
+        return NotImplemented
+
+    @abstractmethod
+    def mean(self):
+        return NotImplemented
+
+    @abstractmethod
+    def cross_entropy(self, true_result):
+        return NotImplemented
+
+class CPUTensor(Tensor):
+
+    def __init__(self, data, requires_grad: bool = False, depends_on = None) -> None:
+        super().__init__(data=data, requires_grad=requires_grad, depends_on=depends_on)
+
+    def __matmul__(self, other: 'Tensor') -> 'CPUTensor':
         return _matmul(self, other)
 
-    def __add__(self, other: 'Tensor') -> 'Tensor':
+    def __add__(self, other: 'Tensor') -> 'CPUTensor':
         try:
             return Tensor(self.data + other.data,
                 requires_grad=self.requires_grad or other.requires_grad)
@@ -59,38 +119,38 @@ class Tensor:
             return Tensor(self.data + other,
                 requires_grad=self.requires_grad)
 
-    def __sub__(self, other: 'Tensor') -> 'Tensor':
-        return Tensor(self.data - other.data,
+    def __sub__(self, other: 'Tensor') -> 'CPUTensor':
+        return CPUTensor(self.data - other.data,
              requires_grad=self.requires_grad or other.requires_grad)
 
     def __mul__(self, k: float):
-        return Tensor(self.data * k, requires_grad=self.requires_grad)
-
-    def sqrt(self):
-        return Tensor(self.data ** .5, requires_grad=self.requires_grad)
+        return CPUTensor(self.data * k, requires_grad=self.requires_grad)
 
     def __pow__(self, k: float):
-        return Tensor(self.data ** k, requires_grad=self.requires_grad)
+        return CPUTensor(self.data ** k, requires_grad=self.requires_grad)
+
+    def sqrt(self):
+        return CPUTensor(self.data ** .5, requires_grad=self.requires_grad)
     
-    def dot(self, other: 'Tensor') -> 'Tensor':
+    def dot(self, other: 'Tensor') -> 'CPUTensor':
         return _matmul(self, other)
 
     def div(self, other):
-        return Tensor((other.data ** -1) * self.data, requires_grad=self.requires_grad)
+        return CPUTensor((other.data ** -1) * self.data, requires_grad=self.requires_grad)
 
     def relu(self):
         return _relu(self)
 
-    def dot(self, other: 'Tensor') -> 'Tensor':
+    def dot(self, other: 'Tensor') -> 'CPUTensor':
         return self @ other
 
-    def softmax(self) -> 'Tensor':
+    def softmax(self) -> 'CPUTensor':
         return _softmax(self)
 
-    def mse(self, other) -> 'Tensor':
+    def mse(self, other) -> 'CPUTensor':
         return _MSE(self, other)
 
-    def sigmoid(self) -> 'Tensor':
+    def sigmoid(self) -> 'CPUTensor':
         return _sigmoid(self)
 
     def mean(self):
@@ -111,7 +171,7 @@ As we will port this to C++, we will probably have several overloadings
 of tensor (or simpl a lot of if statements)
 '''
 
-def _softmax(t: 'Tensor') -> 'Tensor':
+def _softmax(t: 'CPUTensor') -> 'CPUTensor':
     max_value = np.max(t.data)
     temp = t.data - max_value
     data = np.exp(temp)
@@ -126,9 +186,9 @@ def _softmax(t: 'Tensor') -> 'Tensor':
 
         depends_on.append(Func(t, softmax_fn))
     
-    return Tensor(data, t.requires_grad, depends_on)
+    return CPUTensor(data, t.requires_grad, depends_on)
 
-def _mean(t: 'Tensor') -> 'Tensor':
+def _mean(t: 'CPUTensor') -> 'CPUTensor':
     data = np.sum(t.data) / t.data.shape
     depends_on = []
     if t.requires_grad:
@@ -137,9 +197,9 @@ def _mean(t: 'Tensor') -> 'Tensor':
 
         depends_on.append(Func(t, mean_fn))
 
-    return Tensor(data, t.requires_grad, depends_on)
+    return CPUTensor(data, t.requires_grad, depends_on)
 
-def _cross_entropy(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
+def _cross_entropy(t1: 'CPUTensor', t2: 'CPUTensor') -> 'CPUTensor':
     delta = 0.0001
     data = - np.mean((t2.data.T * np.log(t1.data+delta) + (1-t2.data).T * np.log(1-t1.data+delta)))
     depends_on = []
@@ -149,9 +209,9 @@ def _cross_entropy(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
             return -data*grad*temp
         
         depends_on.append(Func(t1, cross_entropy_fn))
-    return Tensor(data, t1.requires_grad, depends_on)
+    return CPUTensor(data, t1.requires_grad, depends_on)
 
-def _MSE(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
+def _MSE(t1: 'CPUTensor', t2: 'CPUTensor') -> 'CPUTensor':
     temp = t2.data - t1.data
     data = np.mean(temp * temp)
     depends_on = []
@@ -162,10 +222,10 @@ def _MSE(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
 
         depends_on.append(Func(t1, MSE_fn))
     
-    return Tensor(data, t1.requires_grad, depends_on)
+    return CPUTensor(data, t1.requires_grad, depends_on)
 
 
-def _sigmoid(t: 'Tensor') -> 'Tensor':
+def _sigmoid(t: 'CPUTensor') -> 'CPUTensor':
     data = np.zeros(t.data.shape)
     for i in range(t.data.shape[1]):
         val = t.data[0, i]
@@ -181,9 +241,9 @@ def _sigmoid(t: 'Tensor') -> 'Tensor':
         
         depends_on.append(Func(t, sigmoid_fn))
     
-    return Tensor(data, t.requires_grad, depends_on)
+    return CPUTensor(data, t.requires_grad, depends_on)
 
-def _matmul(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
+def _matmul(t1: 'CPUTensor', t2: 'CPUTensor') -> 'CPUTensor':
     data = t1.data @ t2.data
     if data.shape == ():
         data = np.array([data]).reshape((1, 1))
@@ -200,9 +260,9 @@ def _matmul(t1: 'Tensor', t2: 'Tensor') -> 'Tensor':
             return t1.data.T @ grad
         depends_on.append(Func(t2, matmul_fn2))
 
-    return Tensor(data, t1.requires_grad or t2.requires_grad, depends_on)
+    return CPUTensor(data, t1.requires_grad or t2.requires_grad, depends_on)
 
-def _relu(t: 'Tensor') -> 'Tensor':
+def _relu(t: 'CPUTensor') -> 'CPUTensor':
     data = np.maximum(0, t.data)
     depends_on = []
 
@@ -213,4 +273,4 @@ def _relu(t: 'Tensor') -> 'Tensor':
         
         depends_on.append(Func(t, relu_fn))
     
-    return Tensor(data, t.requires_grad, depends_on)
+    return CPUTensor(data, t.requires_grad, depends_on)
