@@ -1,8 +1,9 @@
 import numpy as np
+from torch.functional import Tensor
 from tqdm import tqdm
 
 from examples import load_mnist
-from nonograd.tensor import CPUTensor
+from nonograd.tensor import CPUTensor, _MSE
 from nonograd.optim import SGD
 from nonograd.models.mnist_net import MNISTNet
 
@@ -44,7 +45,8 @@ def Mnist(load: bool = False):
                 CPUTensor(np.eye(10)[y, :].reshape(1, 10))
 
             out = model.forward(x)
-            loss = out.mse(y)
+            # loss = out.mse(y)
+            loss = _MSE(out, y)
             assert loss.requires_grad
 
             optim.zero_grad()
